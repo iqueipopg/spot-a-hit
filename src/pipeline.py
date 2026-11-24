@@ -6,16 +6,16 @@ import pickle
 import numpy as np
 import pandas as pd
 
-from .common import RESULTS, folds, load
+from .common import RESULTS, folds, load, title_key
 from .features import supervised, unsupervised
 
 CACHE = RESULTS / "cache"
 
 
-def design(seed: int = 0, n_splits: int = 5, text: bool = True):
+def design(seed: int = 0, n_splits: int = 5, text: bool = True, version: int = 3):
     """Returns y, a list of (train_idx, val_idx, X_train, X_val) and (X_full_train, X_test)."""
     CACHE.mkdir(parents=True, exist_ok=True)
-    path = CACHE / f"design_s{seed}_k{n_splits}_t{int(text)}.pkl"
+    path = CACHE / f"design_v{version}_s{seed}_k{n_splits}_t{int(text)}.pkl"
     if path.exists():
         return pickle.loads(path.read_bytes())
 
@@ -25,22 +25,23 @@ def design(seed: int = 0, n_splits: int = 5, text: bool = True):
     Utr, Ute = U.iloc[: len(train)].reset_index(drop=True), U.iloc[len(train):].reset_index(drop=True)
 
     out = []
-    for i, (a, b) in enumerate(folds(y, n_splits, seed)):
+    groups = train.track.map(title_key).values if version >= 3 else None
+    for i, (a, b) in enumerate(folds(y, n_splits, seed, groups)):
         F, A = supervised(train.iloc[a].reset_index(drop=True), y[a],
-                          train.iloc[b].reset_index(drop=True), seed=seed + i, text=text)
+                          train.iloc[b].reset_index(drop=True), seed=seed + i, text=text, version=version)
         Xa = pd.concat([Utr.iloc[a].reset_index(drop=True), F], axis=1)
         Xb = pd.concat([Utr.iloc[b].reset_index(drop=True), A], axis=1)
         out.append((a, b, Xa, Xb))
-    F, A = supervised(train, y, test, seed=seed, text=text)
+    F, A = supervised(train, y, test, seed=seed, text=text, version=version)
     full = (pd.concat([Utr, F], axis=1), pd.concat([Ute, A], axis=1))
     res = (y, out, full)
     path.write_bytes(pickle.dumps(res))
     return res
 
 
-def run_cv(make_model, cols, seed=0, n_splits=5, fit_kwargs=None, predict_test=True):
+def run_cv(make_model, cols, seed=0, n_splits=5, fit_kwargs=None, predict_test=True, version=3):
     """Out-of-fold predictions and a test prediction from a model trained on all of train."""
-    y, fs, (Xfull, Xtest) = design(seed, n_splits)
+    y, fs, (Xfull, Xtest) = design(seed, n_splits, version=version)
     oof = np.zeros(len(y))
     for a, b, Xa, Xb in fs:
         m = make_model()

@@ -4,12 +4,13 @@ from __future__ import annotations
 import csv
 import datetime as dt
 import json
+import re
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 from sklearn.metrics import accuracy_score, log_loss, roc_auc_score
-from sklearn.model_selection import StratifiedKFold
+from sklearn.model_selection import StratifiedGroupKFold, StratifiedKFold
 
 ROOT = Path(__file__).resolve().parents[1]
 DATA = ROOT / "data"
@@ -36,8 +37,20 @@ def profit(y: np.ndarray, invest: np.ndarray) -> float:
     return GAIN_HIT * np.sum(invest & (y == 1)) - LOSS_FLOP * np.sum(invest & (y == 0))
 
 
-def folds(y: np.ndarray, n_splits: int = 5, seed: int = 0):
-    return list(StratifiedKFold(n_splits, shuffle=True, random_state=seed).split(np.zeros(len(y)), y))
+TITLE_RE = re.compile(r"\s*[\(\[].*?[\)\]]|\s+-\s+.*$")
+
+
+def title_key(track: str) -> str:
+    """Normalised title: no '(Remastered)', no ' - Live', lower case. Covers share it."""
+    return TITLE_RE.sub("", track.lower()).strip()
+
+
+def folds(y: np.ndarray, n_splits: int = 5, seed: int = 0, groups=None):
+    """Stratified folds. With groups, songs sharing a title stay on the same side, as in the
+    official train/test split (no test title appears in train)."""
+    if groups is None:
+        return list(StratifiedKFold(n_splits, shuffle=True, random_state=seed).split(np.zeros(len(y)), y))
+    return list(StratifiedGroupKFold(n_splits, shuffle=True, random_state=seed).split(np.zeros(len(y)), y, groups))
 
 
 def evaluate(y: np.ndarray, p: np.ndarray) -> dict:

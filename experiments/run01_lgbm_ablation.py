@@ -10,7 +10,7 @@ from src.common import report, save_oof
 from src.features import AUDIO
 from src.pipeline import design, run_cv
 
-y, fs, (Xfull, Xtest) = design(seed=0)
+y, fs, (Xfull, Xtest) = design(seed=0, version=1)
 allc = list(Xfull.columns)
 sup = ["art_te", "art_seen", "artdec_te", "text_p"]
 unsup = [c for c in allc if c not in sup]
@@ -28,7 +28,7 @@ sets = {
     "all": allc,
 }
 for name, cols in sets.items():
-    y, oof, tp = run_cv(lgbm, cols, predict_test=(name == "all"))
+    y, oof, tp = run_cv(lgbm, cols, predict_test=(name == "all"), version=1)
     report(f"r01 lgbm {name}", y, oof, f"{len(cols)} features")
     if name == "all":
         save_oof("r01_lgbm_all", oof, tp)
