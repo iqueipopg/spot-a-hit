@@ -23,6 +23,14 @@ AUDIO = ["danceability", "energy", "key", "loudness", "mode", "speechiness", "ac
 CONTINUOUS = ["danceability", "energy", "loudness", "speechiness", "acousticness",
               "instrumentalness", "liveness", "valence", "tempo", "duration_ms", "chorus_hit", "sections"]
 
+from .common import mask_text
+
+
+def masked_re(words, flags=re.I):
+    """Keyword regex that matches the masked spelling ('remaster' -> 'r*****t*r')."""
+    return re.compile("|".join(re.escape(mask_text(w)) for w in words), flags)
+
+
 FEAT_RE = re.compile(r"\b(feat\.?|featuring|ft\.?|with|x|vs\.?)\b|&|,|\band\b", re.I)
 CLASSICAL_RE = re.compile(r"\b(op\.|bwv|k\.\s?\d|no\.\s?\d|sonata|concerto|symphon|allegro|adagio|andante|"
                           r"prelude|nocturne|etude|minor|major|act \w+|scene|aria|movement|mvt)\b", re.I)
@@ -31,13 +39,20 @@ ENSEMBLE_RE = re.compile(r"orchestra|quartet|trio|ensemble|choir|philharmonic|sy
                          r"singers|brothers|sisters|boys|girls", re.I)
 
 
+TR_FEAT_M = masked_re(["feat"])
+CLASSICAL_M = masked_re(["op.", "bwv", "no. ", "sonata", "concerto", "symphon", "allegro", "adagio", "andante",
+                         "prelude", "nocturne", "etude", "minor", "major", "aria", "movement"])
+VERSION_M = masked_re(["remaster", "live", "version", "mix", "edit", "demo", "acoustic", "instrumental",
+                       "mono", "stereo", "take"])
+
+
 def _nonascii(s: str) -> float:
     return sum(ord(c) > 127 for c in s) / max(len(s), 1)
 
 
 def unsupervised(train: pd.DataFrame, test: pd.DataFrame) -> pd.DataFrame:
     """Features that do not use the target. Returns one frame for train+test (train first)."""
-    al = pd.concat([train.drop(columns="target"), test], ignore_index=True)
+    al = pd.concat([train.drop(columns=["target", "track_raw"], errors="ignore"), test], ignore_index=True)
     X = al[["decade"] + AUDIO].copy()
 
     # Song structure
@@ -82,9 +97,11 @@ def unsupervised(train: pd.DataFrame, test: pd.DataFrame) -> pd.DataFrame:
     X["tr_paren"] = t.str.contains(r"[\(\[]").astype(int)
     X["tr_dash"] = t.str.contains(r" - ").astype(int)
     X["tr_digits"] = t.str.count(r"\d")
-    X["tr_feat"] = t.str.contains(r"\bfeat", case=False).astype(int)
-    X["tr_classical"] = (t + " " + a).str.contains(CLASSICAL_RE).astype(int)
-    X["tr_version"] = t.str.contains(VERSION_RE).astype(int)
+    # Keyword flags look for the masked spelling, which is what both train and test now show
+    X["tr_feat"] = t.str.contains(TR_FEAT_M).astype(int)
+    X["tr_classical"] = (t.str.contains(CLASSICAL_M) | a.str.contains(CLASSICAL_RE)).astype(int)
+    X["tr_version"] = t.str.contains(VERSION_M).astype(int)
+    X["tr_star_share"] = t.str.count(r"\*") / t.str.len().clip(lower=1)
     X["tr_upper"] = t.map(lambda s: sum(c.isupper() for c in s) / max(sum(c.isalpha() for c in s), 1))
     X["tr_colon"] = t.str.contains(":").astype(int)
     # Same title by several artists: covers and standards
@@ -149,7 +166,7 @@ def supervised(fit_df: pd.DataFrame, y_fit: np.ndarray, app_df: pd.DataFrame, se
                version=1):
     """Target-based features for a fit set (OOF) and an apply set."""
     from .common import title_key
-    G = fit_df.track.map(title_key).values if version >= 3 else None
+    G = fit_df.track_raw.map(title_key).values if version >= 3 else None
     F, A = pd.DataFrame(index=range(len(fit_df))), pd.DataFrame(index=range(len(app_df)))
     F["art_te"], F["art_seen"], A["art_te"], A["art_seen"] = target_encode(
         fit_df.artist.values, y_fit, app_df.artist.values, seed=seed, groups=G)

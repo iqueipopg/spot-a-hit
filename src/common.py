@@ -22,12 +22,27 @@ LOSS_FLOP = 1.0 - 0.1   # invest in a flop
 BREAK_EVEN = LOSS_FLOP / (GAIN_HIT + LOSS_FLOP)  # invest when P(hit) > 0.375
 
 
-def load() -> tuple[pd.DataFrame, pd.DataFrame]:
+# The test titles come masked: every lowercase a, b, c, e, h, i, m, o, s, u, v is replaced by '*'
+# ("Breaking Up Is Hard To Do" -> "Br**k*ng Up I* H*rd T* D*"). Inferred from letter survival
+# rates (0-5% for these eleven, 86-105% for the rest); applying it to train reproduces the test's
+# share of masked characters (38.6% vs 39.0%). Train titles are masked the same way so that every
+# title feature means the same thing in train and in test.
+MASKED = set("abcehimosuv")
+
+
+def mask_text(s: str) -> str:
+    return "".join("*" if ch in MASKED else ch for ch in s)
+
+
+def load(mask: bool = True) -> tuple[pd.DataFrame, pd.DataFrame]:
     train = pd.read_excel(DATA / "train.xlsx")
     test = pd.read_excel(DATA / "test.xlsx")
     for df in (train, test):
         df["track"] = df["track"].astype(str)
         df["artist"] = df["artist"].astype(str)
+    train["track_raw"] = train["track"]  # only used to group covers in the CV
+    if mask:
+        train["track"] = train["track"].map(mask_text)
     return train, test
 
 

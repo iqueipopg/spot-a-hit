@@ -12,7 +12,7 @@ from .features import supervised, unsupervised
 CACHE = RESULTS / "cache"
 
 
-def design(seed: int = 0, n_splits: int = 5, text: bool = True, version: int = 3):
+def design(seed: int = 0, n_splits: int = 5, text: bool = True, version: int = 4):
     """Returns y, a list of (train_idx, val_idx, X_train, X_val) and (X_full_train, X_test)."""
     CACHE.mkdir(parents=True, exist_ok=True)
     path = CACHE / f"design_v{version}_s{seed}_k{n_splits}_t{int(text)}.pkl"
@@ -25,7 +25,7 @@ def design(seed: int = 0, n_splits: int = 5, text: bool = True, version: int = 3
     Utr, Ute = U.iloc[: len(train)].reset_index(drop=True), U.iloc[len(train):].reset_index(drop=True)
 
     out = []
-    groups = train.track.map(title_key).values if version >= 3 else None
+    groups = train.track_raw.map(title_key).values if version >= 3 else None
     for i, (a, b) in enumerate(folds(y, n_splits, seed, groups)):
         F, A = supervised(train.iloc[a].reset_index(drop=True), y[a],
                           train.iloc[b].reset_index(drop=True), seed=seed + i, text=text, version=version)
@@ -39,7 +39,7 @@ def design(seed: int = 0, n_splits: int = 5, text: bool = True, version: int = 3
     return res
 
 
-def run_cv(make_model, cols, seed=0, n_splits=5, fit_kwargs=None, predict_test=True, version=3):
+def run_cv(make_model, cols, seed=0, n_splits=5, fit_kwargs=None, predict_test=True, version=4):
     """Out-of-fold predictions and a test prediction from a model trained on all of train."""
     y, fs, (Xfull, Xtest) = design(seed, n_splits, version=version)
     oof = np.zeros(len(y))
