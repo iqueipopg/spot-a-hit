@@ -1,0 +1,6 @@
+.venv/
+__pycache__/
+data/*.xlsx
+results/cache/
+results/oof/
+*.pkl
