@@ -24,6 +24,7 @@
 \setlength{\abovedisplayskip}{3pt}
 \setlength{\belowdisplayskip}{3pt}
 \pagestyle{empty}
+\setcounter{topnumber}{4}\renewcommand{\topfraction}{0.85}\renewcommand{\textfraction}{0.1}
 
 \begin{document}
 \twocolumn[{%
@@ -88,7 +89,9 @@ artists in the middle leave the model something to decide.}
 \section{Data preparation}
 \textbf{Cleaning.} I masked the train titles with the same rule. Otherwise every title
 feature would mean one thing in training and another in test, and no CV number would
-warn about it. \textbf{Structuring.} The split comes first: 10-fold CV, stratified and
+warn about it.
+
+\textbf{Structuring.} The split comes first: 10-fold CV, stratified and
 grouped by title, so covers and remasters of a song (10.7\% of train) stay on one side.
 The official split looks random (8.8\% of masked test titles appear in masked train,
 7.4\% for a random split of train), so grouping is the conservative choice.
@@ -194,7 +197,7 @@ songs and in money. The model gives up 274M of missed hits to stay out of most o
 Profit is flat around 0.375 and the probabilities sit on the diagonal (Figure~5), so the
 theoretical threshold is also the empirical one (best within 5M).
 
-\begin{figure}[!b]
+\begin{figure}[!t]
 \centering
 \includegraphics[width=0.93\columnwidth]{fig/profit_calibration.pdf}
 \caption{Final model, out of fold. (a) Profit by threshold. (b) Calibration: predicted
