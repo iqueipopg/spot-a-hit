@@ -7,8 +7,8 @@ data allowed.
 
 **Short answer: out-of-fold AUC 0.9485, accuracy 0.904 and 6,281M of profit on the 10,000 train songs, 86.6% of what
 perfect foresight would earn.** Most of the gain came from reading the data before modelling it: the test titles are
-masked (eleven lowercase letters replaced by `*`), no test title appears in train, and 83.5% of artists with two or
-more songs are all hits or all flops. The final model is a logistic stack of three tuned gradient-boosting families, a
+masked (eleven lowercase letters replaced by `*`), the artist almost decides the label (83.5% of artists with two or
+more songs are all hits or all flops), and the `id` only encodes the decade. The final model is a logistic stack of three tuned gradient-boosting families, a
 character-level BiGRU and a TF-IDF text model. The two-page write-up is in the [report](report/QueipoDeLlano_Ignacio.pdf).
 
 ![How the CV AUC was built](report/fig/progression.png)
@@ -38,7 +38,7 @@ Investing in every song earns 2,602M; perfect foresight 7,251M. On test the mode
 ## Repository
 
 ```
-deliverable/   the submitted notebook (self-contained, runs in 45 min) and its decisions.csv
+deliverable/   the submitted notebook (CRISP-DM order, self-contained, runs in 45 min) and its decisions.csv
                build_notebook.py generates the notebook from code, so it never drifts from the experiments
 src/           shared code: loading and title masking, features, CV pipeline, the BiGRU
 experiments/   one script per run (run10 = run09 with K=10), plus the report figures

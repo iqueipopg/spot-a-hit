@@ -15,28 +15,17 @@ code = lambda s: cells.append(nbf.v4.new_code_cell(s.strip()))
 md(r"""
 # Spot-a-hit — Ignacio Queipo de Llano
 
-**Goal.** For each of the 2,000 test songs, invest (1) or pass (0). A hit returns +\$1.5M net, a
-flop −\$0.9M, so we invest when **P(hit) > 0.9 / 2.4 = 0.375**. The score is profit, which rewards
-two things: ranking songs well (AUC) and well-calibrated probabilities around 0.375.
+For each of the 2,000 test songs: invest (1) or pass (0). The notebook follows the CRISP-DM flow
+of the course: **1 business understanding → 2 data understanding → 3 data preparation →
+4 modelling → 5 evaluation → 6 deployment**, and ends with a decision log. The iterations that went
+back from evaluation to the features are in the experiment diary of the repo
+(github.com/iqueipopg/spot-a-hit, `docs/DIARIO.md`); this notebook is the final pipeline only.
 
-**Pipeline.**
-1. Read both files. Test titles are *masked* (every lowercase a, b, c, e, h, i, m, o, s, u, v is
-   shown as `*`); train titles are masked the same way so every title feature means the same in both.
-2. Features that never look at the target, built on train + test together (audio, audio relative
-   to its decade, artist catalogue statistics, name and title shape).
-3. Target-based features (artist hit rates, text models on title and artist, audio neighbours),
-   always out of fold with an inner K-fold: no song ever sees its own label.
-4. Three gradient-boosted tree models (LightGBM, CatBoost, XGBoost) and a character-level BiGRU.
-5. A logistic-regression stack of the four, with interactions for *artist already seen*, and the
-   decision at the 0.375 break-even threshold.
+It needs only `train.xlsx` and `test.xlsx` next to it and writes `decisions.csv`. Expected CV
+(10 folds): AUC ≈ 0.948, accuracy ≈ 0.904, profit ≈ 6,281M on the 10,000 train songs.
 
-Validation is 10-fold, stratified and **grouped by normalised title**, as in the official split (no
-test title appears in train). Expected CV: AUC ≈ 0.948, accuracy ≈ 0.904, profit ≈ \$6.28bn on the
-10,000 training songs (86.6% of the perfect-foresight ceiling).
-
-**Runtime.** With the defaults below, about 60 min on a 20-core CPU (+ ~15 min for the BiGRU
-with a GPU, longer without). Set `QUICK = True` for a ~10 min run with 5 folds and one seed (slightly
-lower scores, same method).
+**Runtime.** About 45 min on a 20-thread CPU with a GPU for the BiGRU (longer without one).
+`QUICK = True` runs 5 folds and one seed for a fast check (AUC ≈ 0.948, same method).
 """)
 
 code(r"""
@@ -54,41 +43,39 @@ from scipy.sparse import hstack
 from scipy.special import logit
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import accuracy_score, log_loss, roc_auc_score
+from sklearn.metrics import accuracy_score, confusion_matrix, log_loss, roc_auc_score
 from sklearn.model_selection import StratifiedGroupKFold
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.pipeline import make_pipeline
-from sklearn.preprocessing import QuantileTransformer
+from sklearn.preprocessing import QuantileTransformer, StandardScaler
 warnings.filterwarnings("ignore")
 """)
 
-md("## 1. Data, economics and validation")
+md(r"""
+## 1. Business understanding
+
+**The decision.** Invest in a song or pass. A hit pays 2.5M against a 1M cost (+1.5M); a flop
+pays 0.1M (−0.9M). Investing has positive expected value when
+
+$$1.5\,p - 0.9\,(1-p) > 0 \iff p > \frac{0.9}{1.5+0.9} = 0.375 .$$
+
+**The metrics, and how to read them here.**
+
+| Metric | Formula | What it says in this case |
+|---|---|---|
+| Profit (the one that pays) | $1.5\,TP - 0.9\,FP$ at $p>0.375$ | money made on the songs we back |
+| AUC | $P(\hat p_{hit} > \hat p_{flop})$ | how well the model *ranks*: chance that a random hit scores above a random flop |
+| Log-loss | $-\frac1n\sum [y\log\hat p + (1-y)\log(1-\hat p)]$ | whether the probabilities can be *trusted*, which is what a 0.375 cut needs |
+| Accuracy | share right at $p>0.5$ | for reference only; 0.5 is not our cut |
+
+Profit needs both ranking (AUC) and calibration (log-loss), so models are tuned on log-loss and
+compared on all four. **Baselines:** investing in nothing earns 0, in everything 2,602M on train;
+perfect foresight earns 7,251M.
+""")
 
 code(r"""
 GAIN_HIT, LOSS_FLOP = 2.5 - 1.0, 1.0 - 0.1
 BREAK_EVEN = LOSS_FLOP / (GAIN_HIT + LOSS_FLOP)          # 0.375
-
-# Test titles are masked; the rule was inferred from letter survival rates and, applied to train,
-# reproduces the test's share of masked characters (38.6% vs 39.0%).
-MASKED = set("abcehimosuv")
-mask_text = lambda s: "".join("*" if ch in MASKED else ch for ch in s)
-
-train, test = pd.read_excel("train.xlsx"), pd.read_excel("test.xlsx")
-for df in (train, test):
-    df["track"], df["artist"] = df["track"].astype(str), df["artist"].astype(str)
-train["track_raw"] = train["track"]                      # only used to group covers in the CV
-train["track"] = train["track"].map(mask_text)
-y = train["target"].values
-print(train.shape, test.shape, "hit rate", y.mean().round(3))
-
-TITLE_RE = re.compile(r"\s*[\(\[].*?[\)\]]|\s+-\s+.*$")
-title_key = lambda t: TITLE_RE.sub("", t.lower()).strip()   # '(Remastered)', ' - Live' removed
-GROUPS = train["track_raw"].map(title_key).values
-
-def folds(y, k, seed=0, groups=None):
-    # Stratified and grouped: versions of the same title never fall on both sides
-    g = groups if groups is not None else np.arange(len(y))
-    return list(StratifiedGroupKFold(k, shuffle=True, random_state=seed).split(np.zeros(len(y)), y, g))
 
 def profit(y, invest):
     invest = np.asarray(invest, bool)
@@ -103,10 +90,82 @@ def evaluate(name, y, p):
 """)
 
 md(r"""
-## 2. Features that do not use the target
+## 2. Data understanding
 
-Built on train + test together: they never look at a label, and the test songs are part of the
-closed box we are given (no external data).
+Sanity first (volume, types, missing values), then one variable at a time, then what moves
+together. Three findings drive what follows: the test titles are masked, the artist almost decides
+the label, and the `id` carries nothing beyond the decade.
+""")
+
+code(r"""
+train, test = pd.read_excel("train.xlsx"), pd.read_excel("test.xlsx")
+for df in (train, test):
+    df["track"], df["artist"] = df["track"].astype(str), df["artist"].astype(str)
+y = train["target"].values
+print(train.shape, test.shape, "| missing values:", int(train.isna().sum().sum()), int(test.isna().sum().sum()),
+      "| duplicated rows:", int(train.drop(columns="id").duplicated().sum()))
+print("hit rate", y.mean().round(3), "(balanced classes)")
+train.groupby("decade").target.agg(songs="size", hit_rate="mean").round(3).T
+""")
+
+code(r"""
+# 1) Test titles are masked. Letters that vanish from test titles (non-initial positions):
+MASKED = set("abcehimosuv")
+mask_text = lambda s: "".join("*" if ch in MASKED else ch for ch in s)
+letters = list("abcdefghijklmnopqrstuvwxyz")
+freq = lambda s: pd.Series(list("".join(w[1:] for t in s for w in t.split()))).value_counts(normalize=True)
+survival = (freq(test.track).reindex(letters).fillna(0) / freq(train.track).reindex(letters)).sort_values()
+print("letter survival test/train:", survival.round(2).to_dict())
+star = lambda s: s.str.count(r"\*").sum() / s.str.len().sum()
+print(f"titles with '*': train {train.track.str.contains('[*]').mean():.1%}, test {test.track.str.contains('[*]').mean():.1%}")
+print(f"masked characters: test {star(test.track):.1%}, train with the same rule {star(train.track.map(mask_text)):.1%}")
+
+# 2) The artist almost decides the label
+art = train.groupby("artist").target.agg(["size", "mean"])
+multi = art[art["size"] >= 2]
+print(f"artists with 2+ songs: {len(multi)}, all-hit {int((multi['mean'] == 1).sum())}, all-flop "
+      f"{int((multi['mean'] == 0).sum())} -> {multi['mean'].isin([0, 1]).mean():.1%} pure")
+print(f"test songs whose exact artist is in train: {test.artist.isin(set(train.artist)).mean():.1%}")
+
+# 3) The id only encodes the decade
+print("id AUC overall", round(roc_auc_score(y, train.id), 3), "| within each decade",
+      {d: round(roc_auc_score(g.target, g.id), 2) for d, g in train.groupby("decade")})
+""")
+
+md(r"""
+## 3. Data preparation
+
+**Cleaning.** Train titles get the same mask as test, so every title feature means the same thing
+in both. **Structuring.** The split comes first: 10-fold CV, stratified and *grouped by title*, so
+versions and covers of a song stay on one side. Within train 10.7% of songs share a title; the
+official split looks random (8.8% of masked test titles appear in masked train, against 7.4% for a
+random 80/20 split of train), so grouping is the conservative choice. **Enriching.** None: no
+external data is allowed.
+""")
+
+code(r"""
+train["track_raw"] = train["track"]                      # only used to group covers in the CV
+train["track"] = train["track"].map(mask_text)
+
+TITLE_RE = re.compile(r"\s*[\(\[].*?[\)\]]|\s+-\s+.*$")
+title_key = lambda t: TITLE_RE.sub("", t.lower()).strip()   # '(Remastered)', ' - Live' removed
+GROUPS = train["track_raw"].map(title_key).values
+
+def folds(y, k, seed=0, groups=None):
+    # Stratified and grouped: versions of the same title never fall on both sides
+    g = groups if groups is not None else np.arange(len(y))
+    return list(StratifiedGroupKFold(k, shuffle=True, random_state=seed).split(np.zeros(len(y)), y, g))
+""")
+
+md(r"""
+### 3.1 Feature engineering, kind A: features that never see a label
+
+Functions of the inputs only (audio, decade, artist name, masked title), so they can be computed on
+train + test together, like fitting a scaler on all the X: the test songs are part of the closed box
+we are given, and no label is involved. Audio relative to its decade
+($z = (x - \bar x_{dec})/s_{dec}$, because a 1965 hit does not sound like a 2015 hit), the artist's
+catalogue (number of songs, decades active, average sound and how far each song is from it) and the
+shape of the name and of the masked title.
 """)
 
 code(r"""
@@ -171,7 +230,12 @@ print(U.shape[1], "unsupervised features")
 """)
 
 md(r"""
-## 3. Target-based features, fold-safe
+### 3.2 Feature engineering, kind B: features built from the labels, always out of fold
+
+These use $y$, so a song must never see its own label: inside every training fold an inner 5-fold
+computes them for each song from the other songs only (*fold-safe*); otherwise the CV would leak
+the answer. The artist hit rate is smoothed towards the global rate $\bar y$:
+$\text{TE}_a = (\text{hits}_a + k\,\bar y)/(n_a + k)$.
 
 `supervised(fit, y_fit, apply)` returns the features for the *fit* rows out of fold (inner 5-fold,
 grouped by title) and for the *apply* rows from a fit on all of *fit*. In the CV it is called once
@@ -291,7 +355,7 @@ def supervised(fit, yf, app, seed):
 """)
 
 md(r"""
-## 4. Design matrices
+### 3.3 Design matrices
 
 One design per outer fold (target features fitted on the training part only) plus the final
 train → test design. Every model below sees exactly the same folds.
@@ -311,7 +375,24 @@ print(X_full.shape[1], "features")
 """)
 
 md(r"""
-## 5. Gradient-boosted trees
+## 4. Modelling
+
+Baseline first: a logistic regression on audio and decade only, same folds.
+""")
+
+code(r"""
+rows = []
+base = np.zeros(len(y))
+cols = ["decade"] + AUDIO
+for a, b in FOLDS:
+    m = make_pipeline(StandardScaler(), LogisticRegression(max_iter=2000)).fit(U_tr.iloc[a][cols], y[a])
+    base[b] = m.predict_proba(U_tr.iloc[b][cols])[:, 1]
+rows.append(evaluate("Baseline: logistic, audio only", y, base))
+print(f"invest in everything: {profit(y, np.ones(len(y))):.0f}M | perfect foresight: {GAIN_HIT * y.sum():.0f}M")
+""")
+
+md(r"""
+### 4.1 Gradient-boosted trees
 
 Hyper-parameters for LightGBM and CatBoost were tuned with Optuna minimising log-loss (the
 calibration is what the 0.375 threshold pays for); they learn slowly and LightGBM sees only ~27% of
@@ -331,7 +412,7 @@ MODELS = {
                                            subsample=0.8, colsample_bytree=0.6, reg_lambda=2.0, tree_method="hist",
                                            n_jobs=N_JOBS, random_state=s),
 }
-OOF, TEST, rows = {}, {}, []
+OOF, TEST = {}, {}
 for name, mk in MODELS.items():
     oof, tst = np.zeros(len(y)), np.zeros(len(test))
     for s in range(SEEDS):
@@ -343,7 +424,7 @@ for name, mk in MODELS.items():
 """)
 
 md(r"""
-## 6. Character-level BiGRU
+### 4.2 Character-level BiGRU
 
 Reads "masked title || artist" in order, character by character. On its own it is much weaker
 than the trees (AUC ≈ 0.88), but it makes *different* mistakes (correlation 0.76 with the trees),
@@ -405,13 +486,17 @@ rows.append(evaluate("BiGRU", y, oof))
 """)
 
 md(r"""
-## 7. Stack and decision
+### 4.3 Stack
 
 Second level: logistic regression on logits of (mean of the three trees, BiGRU, the separate-space
 text model), plus an indicator *some credited artist of the song is already in train* and its
-interactions. For a known artist the stack leans on the trees' artist hit rates; for a new one it
-gives more weight to the BiGRU. The stack itself is evaluated out of fold (10 folds × 5 repeats),
-then refitted on all of train and applied to test. Decision: invest if P(hit) > 0.375.
+interactions ($u = 1$ if some credited artist is already known):
+
+$$\text{logit}\,\hat p = \beta_0 + \sum_k \beta_k z_k + u\,\Big(\gamma_0 + \sum_k \gamma_k z_k\Big).$$
+
+For a known artist the stack leans on the trees' artist hit rates; for a new one it gives more
+weight to the BiGRU. The stack itself is evaluated out of fold (10 folds × 5 repeats), then
+refitted on all of train for the test songs.
 """)
 
 code(r"""
@@ -433,16 +518,70 @@ for r in range(5):
 rows.append(evaluate("Final stack", y, stack_oof))
 
 stack = LogisticRegression(max_iter=2000).fit(S, y)
-p_test = stack.predict_proba(ST)[:, 1]
-decisions = pd.DataFrame({"id": test["id"], "p_hit": p_test.round(4), "invest": (p_test > BREAK_EVEN).astype(int)})
-decisions.to_csv("decisions.csv", index=False)
-print(f"\nInvest in {decisions.invest.sum()} of {len(decisions)} test songs -> decisions.csv")
-print(f"CV profit {profit(y, stack_oof > BREAK_EVEN):.0f}M vs perfect foresight {GAIN_HIT * y.sum():.0f}M "
-      f"and investing in everything {profit(y, np.ones(len(y))):.0f}M (10,000 train songs)")
+print("stack weights", dict(zip(["trees", "gru", "text", "seen", "trees*seen", "gru*seen", "text*seen"],
+                                stack.coef_[0].round(3))))
+""")
+
+md(r"""
+## 5. Evaluation
+
+Against the baseline, with the metric that matches the cost: the confusion matrix before any single
+number, then money, then how much of the AUC is noise.
 """)
 
 code(r"""
 pd.DataFrame(rows).set_index("model").round(4)
+""")
+
+code(r"""
+inv = stack_oof > BREAK_EVEN
+cm = pd.DataFrame(confusion_matrix(y, inv), index=["actual flop", "actual hit"], columns=["pass", "invest"])
+tp, fp, fn = cm.loc["actual hit", "invest"], cm.loc["actual flop", "invest"], cm.loc["actual hit", "pass"]
+print(f"backed {tp} hits (+{GAIN_HIT * tp:,.0f}M) and {fp} flops (-{LOSS_FLOP * fp:,.0f}M); "
+      f"left {fn} hits on the table ({GAIN_HIT * fn:,.0f}M)")
+print("profit by threshold:", {t: round(profit(y, stack_oof > t)) for t in (0.2, 0.3, 0.375, 0.45, 0.5, 0.6)})
+cm
+""")
+
+code(r"""
+# Bootstrap: resample the 10,000 songs with replacement B = 1,000 times and recompute the AUC.
+rng = np.random.default_rng(0)
+boot = np.array([roc_auc_score(y[i], stack_oof[i]) for i in (rng.integers(0, len(y), len(y)) for _ in range(1000))])
+print(f"AUC {roc_auc_score(y, stack_oof):.4f}, bootstrap SE {boot.std(ddof=1):.4f}, "
+      f"95% interval [{np.percentile(boot, 2.5):.4f}, {np.percentile(boot, 97.5):.4f}]")
+seen = u > 0
+print(f"AUC known artists {roc_auc_score(y[seen], stack_oof[seen]):.4f} ({seen.mean():.0%} of songs) | "
+      f"new artists {roc_auc_score(y[~seen], stack_oof[~seen]):.4f}")
+""")
+
+md(r"""
+## 6. Deployment
+
+The stack refitted on all of train scores the test songs; invest where P(hit) > 0.375.
+""")
+
+code(r"""
+p_test = stack.predict_proba(ST)[:, 1]
+decisions = pd.DataFrame({"id": test["id"], "p_hit": p_test.round(4), "invest": (p_test > BREAK_EVEN).astype(int)})
+decisions.to_csv("decisions.csv", index=False)
+print(f"Invest in {decisions.invest.sum()} of {len(decisions)} test songs -> decisions.csv")
+print(f"expected profit if the probabilities hold: {(2.4 * p_test[p_test > BREAK_EVEN] - 0.9).sum():,.0f}M")
+""")
+
+md(r"""
+## Decision log
+
+| Decision | Why |
+|---|---|
+| Invest if P(hit) > 0.375 | break-even of +1.5M vs −0.9M; the best empirical threshold is within 5M of it |
+| Tune on log-loss; report AUC, accuracy and profit | profit needs ranking and calibration; accuracy at 0.5 is not our decision |
+| Mask train titles like test | otherwise title features mean one thing in training and another in test |
+| CV grouped by title, 10 folds | conservative with covers; 10 folds sees about as many known artists as the final model |
+| Label-free features on train + test, label-based ones out of fold | no song ever sees its own label |
+| No external data; pretrained classifier (Jev) left out | 0.918 from names alone without labels: outside knowledge that cannot be audited |
+| Keep the weak BiGRU, drop the stronger hybrid net | the BiGRU is wrong in different places (corr. 0.77); the hybrid copies the trees (0.87) |
+| Logistic stack, not a LightGBM stacker | three strong inputs: a tree overfits the second level |
+| All cores but two | `n_jobs=-1` stalled LightGBM and CatBoost on a 22-thread machine |
 """)
 
 nb = nbf.v4.new_notebook()

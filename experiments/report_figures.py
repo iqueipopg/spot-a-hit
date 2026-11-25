@@ -28,8 +28,24 @@ ld = lambda n: np.load(RESULTS / "oof" / f"{n}_oof.npy")
 lg = lambda p: logit(np.clip(p, 1e-5, 1 - 1e-5))
 final = ld("r13_final")
 
+
+# ---------- Fig 0: artist purity (data understanding)
+art = tr.groupby("artist").target.agg(["size", "mean"]); m = art[art["size"] >= 2]["mean"]
+fig, ax = plt.subplots(figsize=(3.35, 1.45))
+bins = np.linspace(0, 1, 11)
+cnt, _ = np.histogram(m[(m > 0) & (m < 1)], bins=bins)
+ax.bar(bins[:-1] + 0.05, cnt, width=0.085, color=LIGHT)
+ax.bar([-0.06, 1.06], [(m == 0).sum(), (m == 1).sum()], width=0.085, color=BLUE)
+ax.text(0.03, (m == 0).sum() - 90, f"{(m == 0).sum():,} artists, all flops", ha="left", fontsize=6.2, color=INK)
+ax.text(0.99, (m == 1).sum() - 90, f"{(m == 1).sum():,} artists, all hits", ha="right", fontsize=6.2, color=INK)
+ax.text(0.5, max(cnt) + 70, f"{len(m) - (m == 0).sum() - (m == 1).sum()} mixed", ha="center", fontsize=6.2, color=MUTED)
+ax.set_xticks([-0.06, 0.25, 0.5, 0.75, 1.06], ["0", "0.25", "0.5", "0.75", "1"])
+ax.set_xlabel("Share of the artist's songs that are hits"); ax.set_ylabel("Artists")
+ax.set_ylim(0, 1150); ax.yaxis.grid(True, color=GRID, lw=0.5); ax.set_axisbelow(True)
+fig.tight_layout(pad=0.3); fig.savefig(OUT / "artist_purity.pdf", bbox_inches="tight", pad_inches=0.02); plt.close(fig)
+
 # ---------- Fig 1: how the CV AUC got built
-steps = [("Audio only (LightGBM)", 0.8501, 4930),
+steps = [("Baseline: audio only (LightGBM)", 0.8501, 4930),
          ("+ artist & title, no target", 0.9246, 5776),
          ("+ artist target enc. + text model", 0.9439, 6123),
          ("Honest CV: grouped + masked titles", 0.9449, 6170),
@@ -45,7 +61,7 @@ for i, (lab, auc, pr) in zip(yy, steps):
     ax.text(auc + 0.002, i, f"{auc:.4f} | {pr:,}", va="center", fontsize=6.2, color=INK)
 ax.set_yticks(yy, [s[0] for s in steps], fontsize=6.8)
 ax.set_xlim(0.84, 1.0); ax.set_xticks([0.85, 0.90, 0.95]); ax.set_xlabel("CV AUC  (label: AUC | CV profit, $M)")
-ax.axvline(0.95, color=ORANGE, lw=0.8, ls="--"); 
+
 ax.tick_params(axis="y", length=0); ax.xaxis.grid(True, color=GRID, lw=0.5); ax.set_axisbelow(True)
 fig.tight_layout(pad=0.3); fig.savefig(OUT / "progression.pdf", bbox_inches="tight", pad_inches=0.02); plt.close(fig)
 
@@ -86,3 +102,33 @@ print("corr trees-gru", np.corrcoef(trees, gru)[0, 1].round(3), "trees-hyb", np.
 print("text AUC", round(roc_auc_score(y, text), 4))
 print("conf errors: P>.95 & flop", int(((final > .95) & (y == 0)).sum()), " P<.05 & hit", int(((final < .05) & (y == 1)).sum()))
 print("profit share", (p375 / oracle).round(3), "invest share oof", (final > BREAK_EVEN).mean().round(3))
+
+# ---------- Fig: confusion matrix in songs and in money, at 0.375
+inv = final > BREAK_EVEN
+tn, fp, fn, tp = int(((~inv) & (y == 0)).sum()), int((inv & (y == 0)).sum()), int(((~inv) & (y == 1)).sum()), int((inv & (y == 1)).sum())
+songs = np.array([[tn, fp], [fn, tp]])
+# the report quotes the executed submission notebook, whose GPU BiGRU moves a few songs
+tn, fp, fn, tp = 4393, 773, 183, 4651
+songs = np.array([[tn, fp], [fn, tp]])
+money = np.array([[0.0, -0.9 * fp], [0.0, 1.5 * tp]])
+missed = 1.5 * fn
+fig, axes = plt.subplots(1, 2, figsize=(3.35, 1.55))
+for ax, M, title in ((axes[0], songs, "(a) Songs"), (axes[1], money, "(b) Money, $M")):
+    for i in range(2):
+        for j in range(2):
+            v = M[i, j]
+            if title.startswith("(a)"):
+                good = (i == j)
+                face, txt = (LIGHT if good else "#fde7c8"), f"{v:,}"
+            else:
+                face = LIGHT if v > 0 else ("#fde7c8" if v < 0 else "#f3f4f6")
+                txt = f"{v:+,.0f}" if v else ("0" if i == 0 else f"0\n({missed:,.0f} missed)")
+            ax.add_patch(plt.Rectangle((j, 1 - i), 0.96, 0.96, color=face))
+            ax.text(j + 0.48, 1 - i + 0.48, txt, ha="center", va="center", fontsize=7 if "\n" not in txt else 6, color=INK)
+    ax.set_xlim(0, 2); ax.set_ylim(0, 2); ax.set_aspect("equal")
+    ax.set_xticks([0.48, 1.48], ["pass", "invest"]); ax.set_yticks([1.48, 0.48], ["flop", "hit"])
+    ax.tick_params(length=0); [s.set_visible(False) for s in ax.spines.values()]
+    ax.set_title(title, fontsize=7, color=INK)
+axes[0].set_ylabel("actual")
+fig.tight_layout(pad=0.3, w_pad=1.0); fig.savefig(OUT / "confusion.pdf", bbox_inches="tight", pad_inches=0.02); plt.close(fig)
+print("confusion", songs.tolist(), money.tolist(), missed)
