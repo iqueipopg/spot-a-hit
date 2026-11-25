@@ -239,6 +239,8 @@ probabilities hold, that is about 1{,}270M, in line with the CV scaled to 2{,}00
 68\% of test songs by a known artist (65\% inside the folds) the test should land slightly
 above the CV. The notebook needs only the two Excel files, writes \texttt{decisions.csv} and
 reproduces these numbers in 45 minutes, using all cores but two (\texttt{n\_jobs=-1}
-stalled LightGBM and CatBoost on my machine).
+stalled LightGBM and CatBoost on my machine). It also saves the fitted model
+(\texttt{spot\_a\_hit\_model.joblib}): \texttt{predict\_from\_saved\_model.ipynb} loads it and
+writes the same 2{,}000 decisions in two minutes, with or without a GPU.
 
 \end{document}

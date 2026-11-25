@@ -35,10 +35,23 @@ Investing in every song earns 2,602M; perfect foresight 7,251M. On test the mode
   knowledge the rules exclude.
 - The full reasoning, run by run and model by model, is in the [experiment diary](docs/DIARIO.md) (Spanish).
 
+## Two ways to run it
+
+Put `train.xlsx` and `test.xlsx` (course material, not included) next to the notebooks in `deliverable/`, then either:
+
+| | What it does | Time |
+|---|---|---|
+| **Full** `QueipoDeLlano_Ignacio.ipynb` | the whole CRISP-DM pipeline: data checks, features, 10-fold CV of every model, evaluation, decisions; saves the fitted model to `spot_a_hit_model.joblib` | ~45 min (20 threads + GPU) |
+| **Fast** `predict_from_saved_model.ipynb` | loads `spot_a_hit_model.joblib` (9 tree models, 5 BiGRUs, the stack), rebuilds the features and writes the same `decisions.csv` without training anything | ~2 min, with or without GPU |
+
+The fast path checks itself: it prints the share of decisions identical to the full run that saved the model
+(100%, probabilities within 1e-4 on GPU or CPU).
+
 ## Repository
 
 ```
-deliverable/   the submitted notebook (CRISP-DM order, self-contained, runs in 45 min) and its decisions.csv
+deliverable/   the submitted notebook (CRISP-DM order, self-contained, runs in 45 min), its decisions.csv,
+               the saved model (spot_a_hit_model.joblib) and the fast notebook that loads it
                build_notebook.py generates the notebook from code, so it never drifts from the experiments
 src/           shared code: loading and title masking, features, CV pipeline, the BiGRU
 experiments/   one script per run (run10 = run09 with K=10), plus the report figures
@@ -56,8 +69,7 @@ pip install -r requirements.txt
 python experiments/run13_final_stack.py   # needs the OOF files of runs 09 and 11 first
 ```
 
-Or open `deliverable/QueipoDeLlano_Ignacio.ipynb` with the two Excel files next to it and run all cells. The BiGRU uses
-a CUDA GPU if there is one. Use all cores but two: with `n_jobs=-1` LightGBM and CatBoost stalled on a 22-thread WSL
+The BiGRU uses a CUDA GPU if there is one (the saved model also loads on CPU). Use all cores but two: with `n_jobs=-1` LightGBM and CatBoost stalled on a 22-thread WSL
 machine.
 
 Course materials and data are not included.

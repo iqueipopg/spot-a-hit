@@ -412,13 +412,15 @@ MODELS = {
                                            subsample=0.8, colsample_bytree=0.6, reg_lambda=2.0, tree_method="hist",
                                            n_jobs=N_JOBS, random_state=s),
 }
-OOF, TEST = {}, {}
+OOF, TEST, FINAL = {}, {}, {}
 for name, mk in MODELS.items():
     oof, tst = np.zeros(len(y)), np.zeros(len(test))
     for s in range(SEEDS):
         for a, b, Xa, Xb in design:
             oof[b] += mk(s).fit(Xa, y[a]).predict_proba(Xb)[:, 1] / SEEDS
-        tst += mk(s).fit(X_full, y).predict_proba(X_test)[:, 1] / SEEDS
+        m = mk(s).fit(X_full, y)
+        FINAL.setdefault(name, []).append(m)          # kept for the saved model
+        tst += m.predict_proba(X_test)[:, 1] / SEEDS
     OOF[name], TEST[name] = oof, tst
     rows.append(evaluate(name, y, oof))
 """)
@@ -459,7 +461,7 @@ class CharGRU(nn.Module):
         pooled = torch.cat([(h * m).sum(1) / m.sum(1).clamp(min=1), (h - 1e4 * (1 - m)).max(1).values], 1)
         return self.out(torch.cat([pooled, self.dec(d)], 1)).squeeze(-1)
 
-def gru_fit_predict(Xa, Da, ya, Xb, Db, seed, epochs=14, bs=128):
+def gru_fit_predict(Xa, Da, ya, Xb, Db, seed, epochs=14, bs=128, return_net=False):
     torch.manual_seed(seed)
     net = CharGRU(len(idx)).to(dev)
     opt = torch.optim.AdamW(net.parameters(), lr=3e-3, weight_decay=1e-4)
@@ -474,14 +476,20 @@ def gru_fit_predict(Xa, Da, ya, Xb, Db, seed, epochs=14, bs=128):
             opt.step(); sched.step()
     net.eval()
     with torch.no_grad():
-        return torch.sigmoid(net(Xb.to(dev), Db.to(dev))).cpu().numpy()
+        p = torch.sigmoid(net(Xb.to(dev), Db.to(dev))).cpu().numpy()
+    return (p, net) if return_net else p
 
+""")
+
+code(r"""
 oof = np.zeros(len(y))
 for s in range(GRU_SEEDS):
     for a, b in FOLDS:
         oof[b] += gru_fit_predict(S_tr[a], D_tr[a], y[a], S_tr[b], D_tr[b], seed=100 * s) / GRU_SEEDS
 OOF["BiGRU"] = oof
-TEST["BiGRU"] = np.mean([gru_fit_predict(S_tr, D_tr, y, S_te, D_te, seed=900 + s) for s in range(GRU_SEEDS)], 0)
+final_gru = [gru_fit_predict(S_tr, D_tr, y, S_te, D_te, seed=900 + s, return_net=True) for s in range(GRU_SEEDS)]
+TEST["BiGRU"] = np.mean([p for p, _ in final_gru], 0)
+GRU_STATES = [net.cpu().state_dict() for _, net in final_gru]
 rows.append(evaluate("BiGRU", y, oof))
 """)
 
@@ -569,6 +577,19 @@ print(f"expected profit if the probabilities hold: {(2.4 * p_test[p_test > BREAK
 """)
 
 md(r"""
+**Saved model.** Everything fitted on the full train set (9 tree models, 5 BiGRUs, the stack and
+the column order) goes to `spot_a_hit_model.joblib`. `predict_from_saved_model.ipynb` loads it
+and rebuilds the same decisions in a couple of minutes, without retraining.
+""")
+
+code(r"""
+import joblib
+joblib.dump({"trees": FINAL, "gru_states": GRU_STATES, "gru_vocab": idx, "stack": stack,
+             "columns": list(X_full.columns), "p_test": p_test}, "spot_a_hit_model.joblib", compress=3)
+print("saved spot_a_hit_model.joblib")
+""")
+
+md(r"""
 ## Decision log
 
 | Decision | Why |
@@ -583,6 +604,55 @@ md(r"""
 | Logistic stack, not a LightGBM stacker | three strong inputs: a tree overfits the second level |
 | All cores but two | `n_jobs=-1` stalled LightGBM and CatBoost on a 22-thread machine |
 """)
+
+MAIN = list(cells)
+find = lambda start: next(c for c in MAIN if c.cell_type == "code" and c.source.startswith(start))
+cells = []
+md(r"""
+# Spot-a-hit, fast path: predict with the saved model
+
+Same decisions as `QueipoDeLlano_Ignacio.ipynb` without retraining anything. It needs `train.xlsx`,
+`test.xlsx` and `spot_a_hit_model.joblib` (written by the full notebook) in the same folder. The
+features are rebuilt with exactly the same code, because the label-based ones are fitted on the
+train labels; the 9 tree models, the 5 BiGRUs and the stack are loaded, not trained.
+""")
+for start in ("import os, re, warnings", "GAIN_HIT, LOSS_FLOP", "train, test = pd.read_excel",
+              "# 1) Test titles are masked", "train[\"track_raw\"]", "AUDIO = [", "def inner(k, seed",
+              "dev = \"cuda\""):
+    cells.append(find(start))
+code(r"""
+import joblib
+bundle = joblib.load("spot_a_hit_model.joblib")
+assert bundle["gru_vocab"] == idx, "character vocabulary differs from the saved model"
+
+F, A = supervised(train, y, test, seed=0)                  # same call as the full notebook
+X_test = pd.concat([U_te, A], axis=1)[bundle["columns"]]
+lg = lambda p: logit(np.clip(p, 1e-5, 1 - 1e-5))
+
+TEST = {name: np.mean([m.predict_proba(X_test)[:, 1] for m in models], 0) for name, models in bundle["trees"].items()}
+gru_p = []
+for state in bundle["gru_states"]:
+    net = CharGRU(len(idx)); net.load_state_dict(state); net.to(dev).eval()
+    with torch.no_grad():
+        gru_p.append(torch.sigmoid(net(S_te.to(dev), D_te.to(dev))).cpu().numpy())
+
+treesT = np.mean([lg(TEST[m]) for m in TEST], 0)
+gT, tT = lg(np.mean(gru_p, 0)), lg(X_test["text5_p"].values)
+uT = (X_test["cred_seen"].values > 0).astype(float)
+ST = np.column_stack([treesT, gT, tT, uT, treesT * uT, gT * uT, tT * uT])
+p_test = bundle["stack"].predict_proba(ST)[:, 1]
+
+decisions = pd.DataFrame({"id": test["id"], "p_hit": p_test.round(4), "invest": (p_test > BREAK_EVEN).astype(int)})
+decisions.to_csv("decisions.csv", index=False)
+same = ((p_test > BREAK_EVEN) == (bundle["p_test"] > BREAK_EVEN)).mean()
+print(f"Invest in {decisions.invest.sum()} of {len(decisions)} -> decisions.csv | "
+      f"same decisions as the full run: {same:.1%} | max |dp| {np.abs(p_test - bundle['p_test']).max():.1e}")
+""")
+fast = nbf.v4.new_notebook()
+fast["cells"] = cells
+fast["metadata"]["kernelspec"] = {"name": "python3", "display_name": "Python 3", "language": "python"}
+nbf.write(fast, Path(__file__).resolve().parent / "predict_from_saved_model.ipynb")
+cells = MAIN
 
 nb = nbf.v4.new_notebook()
 nb["cells"] = cells
