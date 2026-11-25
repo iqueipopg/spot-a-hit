@@ -17,11 +17,14 @@ import torch.nn as nn
 from src.common import folds, load, report, save_oof, title_key
 
 K = int(sys.argv[1]) if len(sys.argv) > 1 else 5
+MODE = sys.argv[2] if len(sys.argv) > 2 else 'both'  # both | title | artist
 dev = 'cuda' if torch.cuda.is_available() else 'cpu'
 tr, te = load()
 y = tr.target.values.astype(np.float32)
-s_tr = (tr.track.str.slice(0, 60) + ' || ' + tr.artist.str.slice(0, 40)).tolist()
-s_te = (te.track.str.slice(0, 60) + ' || ' + te.artist.str.slice(0, 40)).tolist()
+join = {'both': lambda d: d.track.str.slice(0, 60) + ' || ' + d.artist.str.slice(0, 40),
+        'title': lambda d: d.track.str.slice(0, 80), 'artist': lambda d: d.artist.str.slice(0, 60)}[MODE]
+s_tr = join(tr).tolist()
+s_te = join(te).tolist()
 chars = sorted(set(''.join(s_tr + s_te)))
 idx = {c: i + 1 for i, c in enumerate(chars)}
 L = 104
@@ -77,7 +80,7 @@ def fit_predict(a, Xa, Da, ya, apply_sets, seed, epochs=14):
     return outs
 
 
-SEEDS = 5
+SEEDS = 3
 groups = tr.track_raw.map(title_key).values
 oof = np.zeros(len(y))
 for s in range(SEEDS):
@@ -87,5 +90,6 @@ for s in range(SEEDS):
     print('seed', s, 'done', flush=True)
 # full-train model for the test set
 tst = np.mean([fit_predict(np.arange(len(y)), Xtr, dec_tr, y, [(Xte, dec_te)], seed=900 + s)[0] for s in range(SEEDS)], 0)
-report(f'r11 char BiGRU k{K} x{SEEDS}', y, oof)
-save_oof(f'r11_gru_k{K}', oof, tst)
+tag = '' if MODE == 'both' else '_' + MODE
+report(f'r11 char BiGRU{tag} k{K} x{SEEDS}', y, oof)
+save_oof(f'r11_gru{tag}_k{K}', oof, tst)
