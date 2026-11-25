@@ -12,6 +12,7 @@
 \usepackage{enumitem}
 \usepackage[font=footnotesize,labelfont=bf,skip=3pt]{caption}
 \usepackage{titlesec}
+\usepackage[hidelinks]{hyperref}
 \definecolor{accent}{HTML}{2563EB}
 \titleformat{\section}{\normalsize\bfseries\color{accent}}{\thesection}{0.5em}{}
 \titlespacing*{\section}{0pt}{6pt}{2pt}
@@ -27,7 +28,8 @@
   \begin{center}
     {\Large\bfseries Ignacio Queipo de Llano Pérez-Gascón}\\[2pt]
     {\large Spot-a-hit: deciding which songs to back}\\[1pt]
-    {\footnotesize Predictive Machine Learning in Finance · IESE MiF · individual assignment · notebook \texttt{QueipoDeLlano\_Ignacio.ipynb}}
+    {\footnotesize Predictive Machine Learning in Finance · IESE MiF · individual assignment · notebook \texttt{QueipoDeLlano\_Ignacio.ipynb}}\\[1pt]
+    {\footnotesize Code, experiment log and every run: \href{https://github.com/iqueipopg/spot-a-hit}{\texttt{github.com/iqueipopg/spot-a-hit}}}
   \end{center}
   \vspace{2pt}
   \hrule
@@ -121,10 +123,19 @@ Pretrained classifier (Jev), no training & 0.918 & knows who was famous: externa
 \end{tabular}
 \caption{What did not make it into the notebook.}
 \end{table}
-The last row is worth a line. Out of curiosity I asked a pretrained decision model whether
-each of 1{,}000 train songs charted. With audio only it scored 0.68; with the artist's name,
-0.918 without seeing a single label. That is memory of the world, exactly what the
-assignment forbids and why the titles are masked, so it stays out.
+\textbf{Fun fact: what a pretrained classifier does.} Out of curiosity I ran Jev, a recent
+off-the-shelf decision model from TypeSafe AI, on 1{,}000 train songs with no training at all,
+just the question ``this song entered the Billboard Hot 100''. With audio and decade only it
+scored 0.68, well below a LightGBM trained on these data (0.85): what Billboard liked in each
+decade has to be learnt, not guessed. Given the artist and the masked title it jumped to
+\textbf{0.918 without seeing a single label}. The reason is not skill on this dataset. It was
+pretrained on huge amounts of text, so it knows which artists were famous, it probably
+recognises famous titles even with half the letters gone, and it may well have read the
+charts themselves. That is \emph{leakage}: information reaching the model that would not be
+available at decision time or that the rules exclude, here knowledge from outside the
+dataset, possibly including the very labels we are trying to predict. I cannot audit what it
+was trained on, so I cannot guarantee it brings no outside information, and it stays out of
+the solution.
 
 \begin{figure}[t]
 \centering

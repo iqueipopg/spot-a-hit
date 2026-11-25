@@ -9,4 +9,3 @@ report/*.aux
 report/*.log
 report/*.out
 report/pg-*.png
-report/fig/*.png

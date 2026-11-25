@@ -1,7 +1,7 @@
 """Builds the submission notebook (one self-contained .ipynb) from the cells below.
 
 The notebook only needs train.xlsx and test.xlsx next to it. It is the final pipeline of the
-experiments (runs 09-13 in DIARIO.md) with nothing else: no cache, no imports from src/.
+experiments (runs 09-13 in docs/DIARIO.md) with nothing else: no cache, no imports from src/.
 """
 from pathlib import Path
 
