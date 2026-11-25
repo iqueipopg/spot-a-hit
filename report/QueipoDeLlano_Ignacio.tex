@@ -112,7 +112,9 @@ cannot audit what it was trained on, so it stays out.
   computed on train and test together, like fitting a scaler on all the $X$: audio
   relative to its decade, $z=(x-\bar x_{\text{dec}})/s_{\text{dec}}$ (a 1965 hit does
   not sound like a 2015 hit), the artist's catalogue (songs, decades active, average
-  sound and how far each song is from it) and the shape of the name and masked title.
+  sound and how far each song is from it) and the shape of the name and masked title. Fitting them on train only, the strict reading of
+  ``fit on train only'', costs 0.004 AUC and 51M with the same LightGBM: the test songs carry no
+  labels, but they still say how many songs an artist has and how they sound.
   \item \textbf{Kind B, built from the labels.} The artist's track record and two text
   models, which use $y$. A song must never see its own label, so inside every training
   fold an inner 5-fold computes them for each song from the other songs only. The hit

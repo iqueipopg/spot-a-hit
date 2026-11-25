@@ -598,7 +598,7 @@ md(r"""
 | Tune on log-loss; report AUC, accuracy and profit | profit needs ranking and calibration; accuracy at 0.5 is not our decision |
 | Mask train titles like test | otherwise title features mean one thing in training and another in test |
 | CV grouped by title, 10 folds | conservative with covers; 10 folds sees about as many known artists as the final model |
-| Label-free features on train + test, label-based ones out of fold | no song ever sees its own label |
+| Label-free features on train + test, label-based ones out of fold | no song ever sees its own label; fitting the label-free ones on train only costs 0.004 AUC and 51M (run 16), because the unlabelled test songs still say how many songs an artist has and how they sound |
 | No external data; pretrained classifier (Jev) left out | 0.918 from names alone without labels: outside knowledge that cannot be audited |
 | Keep the weak BiGRU, drop the stronger hybrid net | the BiGRU is wrong in different places (corr. 0.77); the hybrid copies the trees (0.87) |
 | Logistic stack, not a LightGBM stacker | three strong inputs: a tree overfits the second level |

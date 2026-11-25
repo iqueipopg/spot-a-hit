@@ -50,3 +50,5 @@ time,name,auc,acc,logloss,profit_375,profit_best,th_best,notes
 2026-11-25T03:23:03,r13 stack k10 trees+gru+text,0.9479,0.9042,0.2561,6270.9,6282.9,0.425,
 2026-11-25T03:23:04,r13 stack k10 trees+gru+text+seen+trees*seen+gru*seen+text*s,0.9485,0.9040,0.2551,6281.4,6283.2,0.385,
 2026-11-25T19:35:35,r15 rf v5 k10,0.9437,0.8956,0.2765,6145.8,6153.3,0.38,
+2026-11-26T00:42:39,r16 lgbm k10 Kind A on train+test (base),0.9469,0.9010,0.2627,6227.4,6231.9,0.385,
+2026-11-26T00:42:39,r16 lgbm k10 Kind A fit on train only,0.9431,0.8962,0.2738,6176.4,6182.7,0.35,
