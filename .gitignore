@@ -4,3 +4,4 @@ data/*.xlsx
 results/cache/
 results/oof/
 *.pkl
+catboost_info/

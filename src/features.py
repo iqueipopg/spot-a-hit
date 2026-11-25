@@ -162,6 +162,30 @@ def text_model(tr_track, tr_artist, y_fit, ap_track, ap_artist, inner=5, seed=0,
     return fit_p, fit_predict(txt_fit, y_fit, txt_app)
 
 
+def text_model_v5(tr_track, tr_artist, y_fit, ap_track, ap_artist, inner=5, seed=0, C=3.0, groups=None):
+    """Title and artist in separate vector spaces (char 1-5 each, plus whole-token words).
+    Masked titles and clean artist names are different alphabets; mixing them in one vocabulary
+    blurred both. CV AUC of the text model alone: 0.883 -> 0.886."""
+    def vecs():
+        return [(TfidfVectorizer(analyzer="char_wb", ngram_range=(1, 5), min_df=2, sublinear_tf=True), 0),
+                (TfidfVectorizer(analyzer="char_wb", ngram_range=(1, 5), min_df=2, sublinear_tf=True), 1),
+                (TfidfVectorizer(token_pattern=r"[^ ]+", ngram_range=(1, 3), min_df=1, sublinear_tf=True), 1),
+                (TfidfVectorizer(token_pattern=r"[^ ]+", min_df=2, sublinear_tf=True), 0)]
+
+    def fit_predict(ta, aa, ya, tb, ab):
+        vs = vecs()
+        Xa = hstack([v.fit_transform((ta, aa)[s]) for v, s in vs]).tocsr()
+        Xb = hstack([v.transform((tb, ab)[s]) for v, s in vs]).tocsr()
+        return LogisticRegression(C=C, max_iter=4000).fit(Xa, ya).predict_proba(Xb)[:, 1]
+
+    tf, af = tr_track.str.lower().values, tr_artist.str.lower().values
+    tp, ap = ap_track.str.lower().values, ap_artist.str.lower().values
+    out = np.zeros(len(tf))
+    for a, b in _inner(inner, seed, tf, y_fit, groups):
+        out[b] = fit_predict(tf[a], af[a], y_fit[a], tf[b], af[b])
+    return out, fit_predict(tf, af, y_fit, tp, ap)
+
+
 def supervised(fit_df: pd.DataFrame, y_fit: np.ndarray, app_df: pd.DataFrame, seed=0, text=True,
                version=1):
     """Target-based features for a fit set (OOF) and an apply set."""
@@ -191,6 +215,9 @@ def supervised(fit_df: pd.DataFrame, y_fit: np.ndarray, app_df: pd.DataFrame, se
         blank_a = pd.Series("", index=app_df.index)
         F["artname_p"], A["artname_p"] = text_model(blank_f, fit_df.artist, y_fit,
                                                     blank_a, app_df.artist, seed=seed, groups=G)
+    if version >= 5:
+        F["text5_p"], A["text5_p"] = text_model_v5(fit_df.track, fit_df.artist, y_fit,
+                                                   app_df.track, app_df.artist, seed=seed, groups=G)
     if version >= 3:
         # "Kid Ink Featuring Chris Brown" -> primary "kid ink"; credited {"kid ink", "chris brown"}
         pf, pa = fit_df.artist.map(primary_artist).values, app_df.artist.map(primary_artist).values

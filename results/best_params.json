@@ -1,0 +1,20 @@
+{
+  "lgbm": {
+    "n_estimators": 545,
+    "learning_rate": 0.013706337184673924,
+    "num_leaves": 30,
+    "min_child_samples": 32,
+    "subsample": 0.9941869190296131,
+    "colsample_bytree": 0.2714313675236196,
+    "reg_lambda": 0.008613240311939907,
+    "reg_alpha": 0.004418125737902547
+  },
+  "cat": {
+    "iterations": 968,
+    "learning_rate": 0.010513638362792345,
+    "depth": 7,
+    "l2_leaf_reg": 5.8518719648306,
+    "rsm": 0.7878781542553728,
+    "random_strength": 0.7106319803020822
+  }
+}
