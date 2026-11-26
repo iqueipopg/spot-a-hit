@@ -230,10 +230,9 @@ probability against observed hit rate, by decile.}
   label noise). 21 get $P<0.05$ and are hits: a Christmas song by Los del Río, PPAP, a
   metal cover of Taylor Swift. Nothing in the audio, the masked title or the artist's
   record separates them; only music history does, and that is the information the rules
-  close on purpose and that Jev shows is worth 0.918 on its own.
+  close on purpose. Letting it in shows the size of the gap: stacking Jev's zero-shot guess (AUC 0.925 alone on the 10{,}000 songs) on top of our model lifts the out-of-fold AUC to 0.953 and the profit to 6{,}431M ($+150\pm20$M), all of it on artists the model has never seen (0.940 $\to$ 0.963). That is what the rules leave out.
 \end{itemize}
-New artists are where it shows: AUC 0.948 for known artists and 0.940 for new ones. I
-would rather explain 0.9485 than defend a number I don't believe.
+I would rather explain 0.9485 than defend a number I don't believe.
 
 \section{Deployment}
 The stack refitted on all of train backs \textbf{1{,}090 of the 2{,}000 test songs}; if the
