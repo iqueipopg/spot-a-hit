@@ -8,8 +8,9 @@ data allowed.
 **Short answer: out-of-fold AUC 0.9485, accuracy 0.904 and 6,281M of profit on the 10,000 train songs, 86.6% of what
 perfect foresight would earn.** Most of the gain came from reading the data before modelling it: the test titles are
 masked (eleven lowercase letters replaced by `*`), the artist almost decides the label (83.5% of artists with two or
-more songs are all hits or all flops), and the `id` only encodes the decade. The final model is a logistic stack of three tuned gradient-boosting families, a
-character-level BiGRU and a TF-IDF text model. The two-page write-up is in the [report](report/QueipoDeLlano_Ignacio.pdf).
+more songs are all hits or all flops), and the `id` only encodes the decade. The final model is a logistic stack of
+three tuned gradient-boosting families, a character-level BiGRU and a TF-IDF text model. 61% of what the trees use comes
+from who sings and what the song is called; the sound itself is under 20%. The two-page write-up is in the [report](report/QueipoDeLlano_Ignacio.pdf).
 
 ![How the CV AUC was built](report/fig/progression.png)
 
@@ -28,11 +29,24 @@ character-level BiGRU and a TF-IDF text model. The two-page write-up is in the [
 
 Investing in every song earns 2,602M; perfect foresight 7,251M. On test the model invests in 1,090 of 2,000 songs.
 
-- **0.95 was not reached, and I think that is the ceiling.** From run 10 to 14 five different ideas land between
-  0.947 and 0.9486, while the bootstrap standard error of the final AUC is 0.0022.
+### Why 0.9485 is the limit within the rules
+
+- **The curve went flat.** Adding the BiGRU to the trees is a small but real gain (+0.0011 ± 0.0005 AUC, paired
+  bootstrap); every idea after that, such as nesting the BiGRU inside the trees, differs by 0.0003 ± 0.0006.
+- **Capacity is not the bottleneck.** LightGBM, CatBoost and XGBoost score the same to the fourth decimal (0.9467).
 - **What is left needs outside knowledge.** 21 hits get P < 0.05 (a Christmas song by Los del Río, PPAP) and 15 flops
-  get P > 0.95. A pretrained classifier with no training scores 0.918 from artist names alone, which is exactly the
-  knowledge the rules exclude.
+  get P > 0.95. Run 17 measures it: a pretrained classifier (Jev) that never sees a label scores 0.925 on its own, and
+  stacking it on top of this model reaches AUC 0.953 and 6,431M (+150 ± 20M). All of that gain is on artists the
+  model has never seen (0.940 → 0.963): knowing who was famous is exactly what the rules leave out.
+
+### Checks beyond the submitted model
+
+| Run | Question | Answer |
+|---|---|---|
+| 15 | Random forest instead of boosting? | AUC 0.944, 6,146M: tuned boosting wins (0.947) |
+| 16 | Label-free features fitted on train only, as in "fit on train only"? | costs 0.004 AUC and 51M: the unlabelled test songs still say how many songs an artist has and how they sound |
+| 17 | How far does a model with outside knowledge go? | 0.953 and 6,431M, all of it on unseen artists; perfect foresight is 7,251M |
+
 - The full reasoning, run by run and model by model, is in the [experiment diary](docs/DIARIO.md) (Spanish).
 
 ## Two ways to run it
@@ -54,8 +68,9 @@ deliverable/   the submitted notebook (CRISP-DM order, self-contained, runs in 4
                the saved model (spot_a_hit_model.joblib) and the fast notebook that loads it
                build_notebook.py generates the notebook from code, so it never drifts from the experiments
 src/           shared code: loading and title masking, features, CV pipeline, the BiGRU
-experiments/   one script per run (run10 = run09 with K=10), plus the report figures
-results/       runs.csv (every CV score), best_params.json (Optuna), decisions.csv
+experiments/   one script per run (run10 = run09 with K=10), the report figures and feature importance
+results/       runs.csv (every CV score), best_params.json (Optuna), decisions.csv,
+               jev_train.tsv (the pretrained classifier on the train songs, run 17 only)
 report/        LaTeX source, figures and PDF of the two-page report
 docs/          DIARIO.md, the experiment diary
 ```
@@ -69,7 +84,7 @@ pip install -r requirements.txt
 python experiments/run13_final_stack.py   # needs the OOF files of runs 09 and 11 first
 ```
 
-The BiGRU uses a CUDA GPU if there is one (the saved model also loads on CPU). Use all cores but two: with `n_jobs=-1` LightGBM and CatBoost stalled on a 22-thread WSL
-machine.
+The BiGRU uses a CUDA GPU if there is one (the saved model also loads on CPU). Use all cores but two: with `n_jobs=-1`
+LightGBM and CatBoost stalled on a 22-thread WSL machine.
 
 Course materials and data are not included.
