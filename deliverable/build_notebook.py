@@ -1,7 +1,7 @@
 """Builds the submission notebook (one self-contained .ipynb) from the cells below.
 
 The notebook only needs train.xlsx and test.xlsx next to it. It is the final pipeline of the
-experiments (runs 09-13 in docs/DIARIO.md) with nothing else: no cache, no imports from src/.
+experiments (runs 09-13 in experiments/) with nothing else: no cache, no imports from src/.
 """
 from pathlib import Path
 
@@ -18,8 +18,8 @@ md(r"""
 For each of the 2,000 test songs: invest (1) or pass (0). The notebook follows the CRISP-DM flow
 of the course: **1 business understanding → 2 data understanding → 3 data preparation →
 4 modelling → 5 evaluation → 6 deployment**, and ends with a decision log. The iterations that went
-back from evaluation to the features are in the experiment diary of the repo
-(github.com/iqueipopg/spot-a-hit, `docs/DIARIO.md`); this notebook is the final pipeline only.
+back from evaluation to the features are the experiment scripts of the repo
+(github.com/iqueipopg/spot-a-hit, `experiments/` and `results/runs.csv`); this notebook is the final pipeline only.
 
 It needs only `train.xlsx` and `test.xlsx` next to it and writes `decisions.csv`. Expected CV
 (10 folds): AUC ≈ 0.948, accuracy ≈ 0.904, profit ≈ 6,281M on the 10,000 train songs.

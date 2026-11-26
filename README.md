@@ -47,7 +47,6 @@ Investing in every song earns 2,602M; perfect foresight 7,251M. On test the mode
 | 16 | Label-free features fitted on train only, as in "fit on train only"? | costs 0.004 AUC and 51M: the unlabelled test songs still say how many songs an artist has and how they sound |
 | 17 | How far does a model with outside knowledge go? | 0.953 and 6,431M, all of it on unseen artists; perfect foresight is 7,251M |
 
-- The full reasoning, run by run and model by model, is in the [experiment diary](docs/DIARIO.md) (Spanish).
 
 ## Two ways to run it
 
@@ -72,7 +71,6 @@ experiments/   one script per run (run10 = run09 with K=10), the report figures 
 results/       runs.csv (every CV score), best_params.json (Optuna), decisions.csv,
                jev_train.tsv (the pretrained classifier on the train songs, run 17 only)
 report/        LaTeX source, figures and PDF of the two-page report
-docs/          DIARIO.md, the experiment diary
 ```
 
 ## Reproduce
